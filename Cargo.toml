@@ -10,3 +10,6 @@ edition = "2018"
 ctru-rs = { path = "/home/vivlim/git/ctru-rs/ctru-rs" }
 ctru-sys = { path = "/home/vivlim/git/ctru-rs/ctru-sys" }
 pica-gl-sys = { path = "/home/vivlim/git/picaGL-sys" }
+
+#gfx-backend-gl = { path = "/home/vivlim/git/gfx/src/backend/gl" }
+glow = { path = "/home/vivlim/git/glow" }
