@@ -1,5 +1,5 @@
 [package]
-name = "pica-gl"
+name = "citro-3d"
 version = "0.1.0"
 authors = ["Vivian Lim <rust@vvn.space>"]
 edition = "2018"
@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 ctru-rs = { path = "/home/vivlim/git/ctru-rs/ctru-rs" }
 ctru-sys = { path = "/home/vivlim/git/ctru-rs/ctru-sys" }
-pica-gl-sys = { path = "/home/vivlim/git/picaGL-sys" }
+citro-3d-sys = { path = "/home/vivlim/git/citro-3d-sys" }
 
-#gfx-backend-gl = { path = "/home/vivlim/git/gfx/src/backend/gl" }
-glow = { path = "/home/vivlim/git/glow" }
+[build-dependencies]
+failure = "0.1.8"

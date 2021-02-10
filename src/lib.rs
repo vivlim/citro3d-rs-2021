@@ -1,228 +1,126 @@
-extern crate pica_gl_sys;
+extern crate citro_3d_sys;
 extern crate ctru_sys;
 extern crate ctru;
-//extern crate gfx_backend_gl;
-extern crate glow;
+
 
 use core::default::Default;
+use std::ffi::CString;
+use citro_3d_sys::*;
+use ctru_sys::{DVLB_s, DVLB_ParseFile, GPU_RB_DEPTH24_STENCIL8, gfxSet3D};
+use std::convert::TryInto;
 
-pub fn main() {
+#[macro_use]
+pub mod macros;
+
+static shbin_data: &[u8] = include_bytes_align_as!(u32, concat!(env!("OUT_DIR"), "/render2d.v.shbin.o"));
+
+pub struct CitroLibContext {
+    renderTarget: *mut C3D_RenderTarget,
+    clrWhite: u32,
+    clrGreen: u32,
+    clrBlack: u32,
+    clrClear: u32,
+    textBuf: *mut C2D_TextBuf_s,
+    text: C2D_Text,
+    textString: CString,
+    shader_dvlb: *mut DVLB_s,
+    program: ctru_sys::shaderProgram_s,
 }
-pub struct PicaGlContext {
-    textures: Vec<Texture>,
-    angle: f32, // just for demo
-
+fn GX_TRANSFER_FLIP_VERT(x: u32) -> u32 {
+    ((x)<<0)
+}  
+fn GX_TRANSFER_OUT_TILED(x: u32) -> u32 {
+    ((x)<<1)
+}  
+fn GX_TRANSFER_RAW_COPY(x: u32) -> u32 {
+    ((x)<<3)
+}   
+fn GX_TRANSFER_IN_FORMAT(x: u32) -> u32 {
+    ((x)<<8)
+}  
+fn GX_TRANSFER_OUT_FORMAT(x: u32) -> u32 {
+    ((x)<<12)
+} 
+fn GX_TRANSFER_SCALING(x: u32) -> u32 {
+    ((x)<<24)
 }
 
-pub struct Texture {
-    id: pica_gl_sys::GLuint,
-    data: Box<[u32]>
+pub fn init() -> CitroLibContext {
+    unsafe {
+        C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
+        
+        let shader_dvlb = DVLB_ParseFile(std::mem::transmute::<_, *mut u32>(&shbin_data), shbin_data.len() as u32);
+        let mut program: ctru_sys::shaderProgram_s = ctru_sys::shaderProgram_s::default();
+        ctru_sys::shaderProgramInit(&mut program);
+        ctru_sys::shaderProgramSetVsh(&mut program, (*shader_dvlb).DVLE);
+
+        C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+        C2D_Prepare();
+        //let renderTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
+        let mut depthFmt = C3D_DEPTHTYPE::default();
+        depthFmt.__e = GPU_RB_DEPTH16;
+        let renderTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, depthFmt);
+        C3D_RenderTargetSetOutput(renderTarget, GFX_TOP, GFX_LEFT,
+            GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
+            GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
+            GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+
+        let clrWhite = C2D_Color32(0xFF, 0xFF, 0xFF, 0xFF);
+        let clrGreen = C2D_Color32(0x00, 0xFF, 0x00, 0xFF);
+        let clrBlack = C2D_Color32(0x00, 0x00, 0x00, 0xFF);
+        let clrClear = C2D_Color32(0xFF, 0xD8, 0xB0, 0x68);
+
+        let mut textBuf = C2D_TextBufNew(128);
+        let mut text = C2D_Text::default();
+        let textString = CString::new("hello world").unwrap();
+        C2D_TextParse(&mut text as *mut _, textBuf, textString.as_ptr() as *const u8);
+        C2D_TextOptimize(&mut text as *mut _);
+
+
+        CitroLibContext {
+            renderTarget,
+            clrWhite,
+            clrGreen,
+            clrBlack,
+            clrClear,
+            textBuf,
+            text,
+            textString,
+            shader_dvlb,
+            program,
+        }
+
+
+    }
+}
+pub fn exit() {
+    unsafe {
+        C2D_Fini();
+        C3D_Fini();
+    }
 }
 
-impl PicaGlContext {
-    pub fn new() -> PicaGlContext {
-        use pica_gl_sys::{GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_LESS, GL_BLEND, GL_ALPHA_TEST, GL_DEPTH_TEST, GL_TEXTURE_2D, GL_CULL_FACE, GL_PROJECTION, GL_MODELVIEW};
+pub fn on_main_loop(ctx: &mut CitroLibContext){
+    unsafe {
+        println!("\x1b[1;1HSimple citro2d shapes example");
+        println!("\x1b[2;1HCPU:     {:.2}\x1b[K", C3D_GetProcessingTime()*6.0);
+        println!("\x1b[3;1HGPU:     {:.2}\x1b[K", C3D_GetDrawingTime()*6.0);
+        println!("\x1b[4;1HCmdBuf:  {:.2}\x1b[K", C3D_GetCmdBufUsage()*100.0);
+        println!("{:?}", shbin_data.len()); // unmapped read. how do i get it to point at the actual shader...
 
-        unsafe {
-            pica_gl_sys::pglInit();
-            pica_gl_sys::glClearColor(0.2, 0.2, 0.2, 1.0);
-            pica_gl_sys::glViewport(0,0, 400, 240);
 
-            pica_gl_sys::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            pica_gl_sys::glDepthFunc(GL_LESS);
+        C3D_FrameBegin(C3D_FRAME_SYNCDRAW.try_into().unwrap());
+        C2D_TargetClear(ctx.renderTarget, ctx.clrClear);
+        C2D_Flush();
+        C3D_FrameDrawOn(ctx.renderTarget);
+        // I think I need to get render2d.v.pica in, that contains a matrix
+        C2D_SceneSize(ctru_sys::GSP_SCREEN_HEIGHT_TOP, ctru_sys::GSP_SCREEN_WIDTH, true); // seems to have no effect
+        //C2D_SceneTarget(ctx.renderTarget);
+        //C2D_SceneBegin(ctx.renderTarget); // calls C2D_SceneTarget which calls C2D_SceneSize
 
-            pica_gl_sys::glEnable(GL_BLEND);
-            pica_gl_sys::glEnable(GL_ALPHA_TEST);
-            pica_gl_sys::glEnable(GL_DEPTH_TEST);
-            pica_gl_sys::glEnable(GL_TEXTURE_2D);
+        C2D_DrawRectangle(0.0, 0.0, 0.0, 500.0, 500.0, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen);
 
-            pica_gl_sys::glDisable(GL_CULL_FACE);
-            pica_gl_sys::glEnableClientState(pica_gl_sys::GL_VERTEX_ARRAY);
-
-            pica_gl_sys::glMatrixMode(GL_PROJECTION);
-            pica_gl_sys::glLoadIdentity();
-
-            pica_gl_sys::gluPerspective(80.0, 400.0/240.0, 0.01, 100.0);
-
-            pica_gl_sys::glMatrixMode(GL_MODELVIEW);
-            pica_gl_sys::glLoadIdentity();
-        }
-
-        return PicaGlContext{
-            textures: Default::default(),
-            angle: 0.0
-        }
+        C2D_DrawText(&ctx.text as *const _, 0, 8.0, 8.0, 1.0, 1.0, 1.0);
+        C3D_FrameEnd(0);
     }
-
-    pub fn render(&mut self){
-        use pica_gl_sys::{GL_TEXTURE_2D, GL_TRIANGLES};
-        unsafe {
-            pica_gl_sys::glBindTexture(GL_TEXTURE_2D, self.textures.first().unwrap().id);
-
-            pica_gl_sys::glBegin(GL_TRIANGLES);
-            pica_gl_sys::glTexCoord2f(0.0, 0.0);
-            pica_gl_sys::glVertex3f(-10.0, -10.0, 0.0 );
-            pica_gl_sys::glTexCoord2f(0.0, 10.0);
-            pica_gl_sys::glVertex3f(-10.0,  10.0, 0.0 );
-            pica_gl_sys::glTexCoord2f(10.0, 10.0);
-            pica_gl_sys::glVertex3f( 10.0,  10.0, 0.0 );
-            pica_gl_sys::glEnd();
-        }
-    }
-
-    pub fn frame(&mut self, renderFn: &mut impl FnMut(&mut bool)){
-        use pica_gl_sys::{GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT};
-        ctru::services::gspgpu::wait_for_event(ctru::services::gspgpu::Event::VBlank0, true);
-        unsafe {
-
-            pica_gl_sys::glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-            /*
-            pica_gl_sys::glLoadIdentity();
-            pica_gl_sys::glTranslatef(0.0, 0.0, -2.5);
-            pica_gl_sys::glRotatef(self.angle , 0.0, 0.0, 1.0);
-            */
-
-            renderFn(&mut true);
-            
-            pica_gl_sys::pglSwapBuffers();
-            //self.angle += 0.5;
-            //println!("rendering a frame with angle {}", self.angle)
-        }
-    }
-
-    pub fn checkerboard_texture(&mut self){
-        use pica_gl_sys::{GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_NEAREST, GL_RGBA, GL_UNSIGNED_BYTE};
-
-        let mut me = Texture {
-            id: 1,
-            data: Box::new([0; 32*32])
-        };
-
-        let mut i = 0;
-
-        //Generate a basic checkerboard pattern
-        for y in 0..32
-        {
-            for x in 0..32
-            {
-                if((x + y) % 2 == 0){
-                    me.data[i] = 0xFF000000;
-                }
-                else{
-                    me.data[i] = 0xFFFFFFFF;
-                }
-                i += 0;
-            }
-        }
-
-        unsafe {
-            pica_gl_sys::glGenTextures (1, &mut me.id);
-            pica_gl_sys::glBindTexture(GL_TEXTURE_2D, me.id);
-            let data_ptr = me.data.as_mut_ptr() as *mut pica_gl_sys::GLvoid;
-            pica_gl_sys::glTexImage2D(GL_TEXTURE_2D, 0, 0, 32, 32, 0, GL_RGBA, GL_UNSIGNED_BYTE, data_ptr);
-            pica_gl_sys::glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST as f32);
-            pica_gl_sys::glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST as f32);
-        }
-
-        self.textures.push(me);
-    }
-
-}
-pub mod test_glow {
-    use glow::*;
-
-    pub fn main() -> impl FnMut(&mut bool) {
-        unsafe {
-            let gl = glow::Context::from_loader_function(|s| {
-                    std::ptr::null()
-                });
-
-                let vertex_array: [pica_gl_sys::GLfloat;9] = [-0.1, -0.25, 0.0,
-                0.1, -0.25, 0.0,
-                0.0, 0.559016994, 0.0];
-
-                /* 
-            let vertex_array = gl
-                .create_vertex_array()
-                .expect("Cannot create vertex array");
-            gl.bind_vertex_array(Some(vertex_array));
-
-            let program = gl.create_program().expect("Cannot create program");
-
-            let (vertex_shader_source, fragment_shader_source) = (
-                r#"const vec2 verts[3] = vec2[3](
-                    vec2(0.5f, 1.0f),
-                    vec2(0.0f, 0.0f),
-                    vec2(1.0f, 0.0f)
-                );
-                out vec2 vert;
-                void main() {
-                    vert = verts[gl_VertexID];
-                    gl_Position = vec4(vert - 0.5, 0.0, 1.0);
-                }"#,
-                r#"precision mediump float;
-                in vec2 vert;
-                out vec4 color;
-                void main() {
-                    color = vec4(vert, 0.5, 1.0);
-                }"#,
-            );
-
-            let shader_sources = [
-                (glow::VERTEX_SHADER, vertex_shader_source),
-                (glow::FRAGMENT_SHADER, fragment_shader_source),
-            ];
-
-            let mut shaders = Vec::with_capacity(shader_sources.len());
-
-            for (shader_type, shader_source) in shader_sources.iter() {
-                let shader = gl
-                    .create_shader(*shader_type)
-                    .expect("Cannot create shader");
-
-                //gl.shader_source(shader, &format!("{}\n{}", shader_version, shader_source));
-                gl.compile_shader(shader);
-                if !gl.get_shader_compile_status(shader) {
-                    panic!(gl.get_shader_info_log(shader));
-                }
-                gl.attach_shader(program, shader);
-                shaders.push(shader);
-            }
-
-            gl.link_program(program);
-            if !gl.get_program_link_status(program) {
-                panic!(gl.get_program_info_log(program));
-            }
-
-            for shader in shaders {
-                gl.detach_shader(program, shader);
-                gl.delete_shader(shader);
-            }
-            */
-
-            
-
-            //gl.use_program(Some(program));
-            gl.clear_color(0.1, 0.2, 0.3, 1.0);
-
-            //render_loop.run(move |running: &mut bool| {
-            return move |running: &mut bool| {
-                // this would be an OK place to poll inputs
-                println!("render loop");
-
-                gl.clear(glow::COLOR_BUFFER_BIT);
-
-                pica_gl_sys::glColor4f(0.6367, 0.76, 0.22, 0.0);
-                pica_gl_sys::glVertexPointer(3, pica_gl_sys::GL_FLOAT, 0, vertex_array.as_ptr() as *const std::ffi::c_void);
-                gl.draw_arrays(glow::TRIANGLES, 0, 3);
-
-                if !*running {
-                    //gl.delete_program(program);
-                    //gl.delete_vertex_array(vertex_array);
-                }
-            };
-        }
-    }
-
 }
