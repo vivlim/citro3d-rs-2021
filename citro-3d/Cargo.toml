@@ -9,7 +9,14 @@ edition = "2018"
 [dependencies]
 ctru-rs = { path = "/home/vivlim/git/ctru-rs/ctru-rs" }
 ctru-sys = { path = "/home/vivlim/git/ctru-rs/ctru-sys" }
-citro-3d-sys = { path = "/home/vivlim/git/citro-3d-sys" }
+citro-3d-sys = { path = "../citro-3d-sys" }
+obj-rs = "0.6.2"
+build_const = "0.2.1"
+cgmath = "0.12.0"
+lazy_static = "1.4.0"
 
 [build-dependencies]
 failure = "0.1.8"
+obj-rs = "0.6.2"
+build_const = "0.2.1"
+citro-3d-sys = { path = "../citro-3d-sys" }

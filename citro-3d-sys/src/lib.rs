@@ -13,7 +13,6 @@ mod bindings;
 #[allow(dead_code)]
 mod inlines {
     use crate::bindings::*;
-
     pub fn C2D_Clamp(x: f32, min: f32, max: f32) -> f32 
     {
         if x <= min {

@@ -1,4 +1,8 @@
 extern crate failure;
+extern crate obj;
+#[macro_use]
+extern crate build_const;
+extern crate citro_3d_sys;
 
 use std::{env, path::PathBuf, process::Stdio};
 use std::process::Command;
@@ -6,7 +10,18 @@ use std::path::Path;
 use std::io::{Write, Read};
 use failure::Error;
 
+use build_const::ConstWriter;
+use obj::{load_obj, Obj, Vertex, TexturedVertex};
+
+include!("src/vertex.rs");
+
 fn main() {
+
+    load_models().unwrap();
+
+    compile_shader(
+        "vshader.v.pica",
+    ).unwrap();
 
     compile_shader(
         "render2d.v.pica",
@@ -35,6 +50,7 @@ fn compile_shader(in_filename: &str) -> Result<(), Error>{
     let dkp_path = env::var("DEVKITPRO")?;
     let picasso_path = Path::new(&dkp_path).join("tools/bin/picasso");
     let bin2s_path = Path::new(&dkp_path).join("tools/bin/bin2s");
+    let as_path = Path::new(&dkp_path).join("devkitARM/arm-none-eabi/bin/as");
 
     let mut picasso_cmd = Command::new(picasso_path);
     picasso_cmd.args(&["-o", shbin_path.to_str().unwrap(), in_filename]);
@@ -48,11 +64,35 @@ fn compile_shader(in_filename: &str) -> Result<(), Error>{
     println!("bin2s cmd: {:?}", &bin2s_cmd);
     let mut bin2s_proc = bin2s_cmd.spawn()?;
 
-    let mut as_cmd = Command::new("as");
+    let mut as_cmd = Command::new(as_path);
     as_cmd.args(&["-o", &out_file.to_str().unwrap()]).stdin(bin2s_proc.stdout.unwrap());
     println!("as cmd: {:?}", &as_cmd);
     let mut as_proc = as_cmd.spawn()?;
 
     &as_proc.wait()?;
+    Ok(())
+}
+
+fn load_models() -> Result<(), Error>{
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let mut consts = ConstWriter::for_build(
+        Path::new("model_data").to_str().unwrap()
+    )?;
+
+    let input = BufReader::new(File::open("cube.obj")?);
+    let obj: Obj<TexturedVertex, u32> = load_obj(input)?;
+    let c3d_vertices: Vec<C3D_Vertex> = obj.vertices
+        .into_iter()
+        .map(|v| C3D_Vertex {
+            position: v.position,
+            texcoord: [v.texture[0], v.texture[1]], // I don't know what it means for this to be 3d in obj but 2d in c3d?
+            normal: v.normal,
+        }).collect();
+
+    let mut consts = consts.finish_dependencies();
+    consts.add_array("cube", "C3D_Vertex", c3d_vertices.as_slice());
+
     Ok(())
 }

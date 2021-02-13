@@ -890,6 +890,16 @@ pub const GPU_FRAGOPMODE_GAS_ACC: GPU_FRAGOPMODE = 1;
 pub const GPU_FRAGOPMODE_SHADOW: GPU_FRAGOPMODE = 3;
 #[doc = " Fragment operation modes."]
 pub type GPU_FRAGOPMODE = ::libc::c_uint;
+#[doc = "< 8-bit byte."]
+pub const GPU_BYTE: GPU_FORMATS = 0;
+#[doc = "< 8-bit unsigned byte."]
+pub const GPU_UNSIGNED_BYTE: GPU_FORMATS = 1;
+#[doc = "< 16-bit short."]
+pub const GPU_SHORT: GPU_FORMATS = 2;
+#[doc = "< 32-bit float."]
+pub const GPU_FLOAT: GPU_FORMATS = 3;
+#[doc = " Supported component formats."]
+pub type GPU_FORMATS = ::libc::c_uint;
 #[doc = "< Disabled."]
 pub const GPU_CULL_NONE: GPU_CULLMODE = 0;
 #[doc = "< Front, counter-clockwise."]
@@ -1715,6 +1725,20 @@ pub struct C3D_AttrInfo {
     pub attrCount: ::libc::c_int,
 }
 extern "C" {
+    pub fn AttrInfo_Init(info: *mut C3D_AttrInfo);
+}
+extern "C" {
+    pub fn AttrInfo_AddLoader(
+        info: *mut C3D_AttrInfo,
+        regId: ::libc::c_int,
+        format: GPU_FORMATS,
+        count: ::libc::c_int,
+    ) -> ::libc::c_int;
+}
+extern "C" {
+    pub fn AttrInfo_AddFixed(info: *mut C3D_AttrInfo, regId: ::libc::c_int) -> ::libc::c_int;
+}
+extern "C" {
     pub fn C3D_GetAttrInfo() -> *mut C3D_AttrInfo;
 }
 extern "C" {
@@ -1732,6 +1756,18 @@ pub struct C3D_BufInfo {
     pub base_paddr: u32_,
     pub bufCount: ::libc::c_int,
     pub buffers: [C3D_BufCfg; 12usize],
+}
+extern "C" {
+    pub fn BufInfo_Init(info: *mut C3D_BufInfo);
+}
+extern "C" {
+    pub fn BufInfo_Add(
+        info: *mut C3D_BufInfo,
+        data: *const ::libc::c_void,
+        stride: isize,
+        attribCount: ::libc::c_int,
+        permutation: u64_,
+    ) -> ::libc::c_int;
 }
 extern "C" {
     pub fn C3D_GetBufInfo() -> *mut C3D_BufInfo;
@@ -2605,6 +2641,17 @@ impl Default for C3D_LightLutDA {
 pub type C3D_LightLutFunc = ::core::option::Option<unsafe extern "C" fn(x: f32, param: f32) -> f32>;
 pub type C3D_LightLutFuncDA =
     ::core::option::Option<unsafe extern "C" fn(dist: f32, arg0: f32, arg1: f32) -> f32>;
+extern "C" {
+    pub fn LightLut_FromArray(lut: *mut C3D_LightLut, data: *mut f32);
+}
+extern "C" {
+    pub fn LightLut_FromFunc(
+        lut: *mut C3D_LightLut,
+        func: C3D_LightLutFunc,
+        param: f32,
+        negative: bool,
+    );
+}
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct C3D_Material {

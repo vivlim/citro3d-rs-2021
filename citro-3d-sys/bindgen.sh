@@ -11,6 +11,8 @@ fi
 
 set -euxo pipefail
 
+export ALLOWLIST_PATTERN="(C2D|C3D|Mtx|GX|DVLB|AttrInfo|BufInfo|LightLut)_.*"
+
 bindgen "$DEVKITPRO/libctru/include/citro2d.h" \
     --rust-target nightly \
     --use-core \
@@ -18,21 +20,9 @@ bindgen "$DEVKITPRO/libctru/include/citro2d.h" \
     --no-layout-tests \
     --ctypes-prefix "::libc" \
     --no-prepend-enum-name \
-    --whitelist-type "C2D_.*" \
-    --whitelist-function "C2D_.*" \
-    --whitelist-var "C2D_.*" \
-    --whitelist-type "C3D_.*" \
-    --whitelist-function "C3D_.*" \
-    --whitelist-var "C3D_.*" \
-    --whitelist-type "Mtx_.*" \
-    --whitelist-function "Mtx_.*" \
-    --whitelist-var "Mtx_.*" \
-    --whitelist-type "GX_.*" \
-    --whitelist-function "GX_.*" \
-    --whitelist-var "GX_.*" \
-    --whitelist-type "DVLB_.*" \
-    --whitelist-function "DVLB_.*" \
-    --whitelist-var "DVLB_.*" \
+    --whitelist-type $ALLOWLIST_PATTERN \
+    --whitelist-function $ALLOWLIST_PATTERN \
+    --whitelist-var $ALLOWLIST_PATTERN \
     --blacklist-type "u(8|16|32|64)" \
     --blacklist-type "__builtin_va_list" \
     --blacklist-type "__va_list" \
