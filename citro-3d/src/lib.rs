@@ -22,8 +22,8 @@ pub mod macros;
 mod inlines;
 use crate::inlines::*;
 
-static shbin_data: &[u8] = include_bytes_align_as!(u32, concat!(env!("OUT_DIR"), "/vshader.v.shbin.o"));
-static shbin2d_data: &[u8] = include_bytes_align_as!(u32, concat!(env!("OUT_DIR"), "/render2d.v.shbin.o"));
+static shbin_data: &[u8] = include_bytes_align_as!(u32, concat!(env!("OUT_DIR"), "/vshader.shbin"));
+//static shbin2d_data: &[u8] = include_bytes_align_as!(u32, concat!(env!("OUT_DIR"), "/render2d.v.shbin.o"));
 
 
 include!("vertex.rs");
@@ -92,28 +92,35 @@ pub fn init() -> CitroLibContext {
     unsafe {
         C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 
-        let shader_dvlb = DVLB_ParseFile(std::mem::transmute::<_, *mut u32>(&shbin2d_data), shbin2d_data.len() as u32);
-
-        if shader_dvlb.is_null(){
-            panic!("shader DVLB parse failed");
-        }
-        let mut program: ctru_sys::shaderProgram_s = ctru_sys::shaderProgram_s::default();
-        let init_ret = ctru_sys::shaderProgramInit(&mut program as *mut _);
-        let setvsh_ret = ctru_sys::shaderProgramSetVsh(&mut program, (*(shader_dvlb as *mut ctru_sys::DVLB_s)).DVLE);
-        debug_print(format!("program {:?} rets: {} {}", shader_dvlb, init_ret, setvsh_ret).as_ref());
-        panic!("??");
-
         //C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
         //C2D_Prepare();
         //let renderTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
         let mut depthFmt = C3D_DEPTHTYPE::default();
-        depthFmt.__e = GPU_RB_DEPTH16;
+        depthFmt.__e = GPU_RB_DEPTH24_STENCIL8;
         let renderTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, depthFmt);
         C3D_RenderTargetSetOutput(renderTarget, GFX_TOP, GFX_LEFT,
             GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
             GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
             GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
         
+        // init scene
+        // transmute to a *mut u32 since that's what the bindgen'd bindings want...
+        debug_print(format!("{:X?}", shbin_data).as_str());
+        let shader_dvlb = DVLB_ParseFile(std::mem::transmute::<*const u8, *mut u32>(shbin_data.as_ptr()), shbin_data.len() as u32);
+
+        if shader_dvlb.is_null(){
+            panic!("shader DVLB parse failed (it was {:?}, from {:x?}", shader_dvlb, shbin_data);
+        }
+        let mut program: ctru_sys::shaderProgram_s = ctru_sys::shaderProgram_s::default();
+        let init_ret = ctru_sys::shaderProgramInit(&mut program as *mut _);
+
+        let shader_dvle = (*(shader_dvlb as *mut ctru_sys::DVLB_s)).DVLE;
+        if shader_dvle.is_null(){
+            panic!("shader dvle is null");
+        }
+        let setvsh_ret = ctru_sys::shaderProgramSetVsh(&mut program, shader_dvle);
+        debug_print(format!("program {:?} rets: {} {}", shader_dvlb, init_ret, setvsh_ret).as_ref());
+
 
         // Get the location of the uniforms
         let uLoc_projection = ctru_sys::shaderInstanceGetUniformLocation(program.vertexShader, uLoc_projection_name.as_ptr() as *const u8);
@@ -287,8 +294,6 @@ impl Scene {
 
 pub fn on_main_loop(ctx: &mut CitroLibContext){
     unsafe {
-        return;
-
         //let iod: f32 = ctru_sys::osGet3DSliderState()/3;
         let iod = 0.0;
 
@@ -305,17 +310,17 @@ pub fn on_main_loop(ctx: &mut CitroLibContext){
             C3D_FrameBufClear(&mut (*ctx.renderTarget).frameBuf, C3D_CLEAR_ALL, ctx.clrClear, 0);
 
             C3D_FrameDrawOn(ctx.renderTarget);
-            //ctx.scene.render(-iod);
-            C2D_Flush();
-            C2D_SceneSize(ctru_sys::GSP_SCREEN_WIDTH, ctru_sys::GSP_SCREEN_HEIGHT_TOP, true); // seems to have no effect
+            ctx.scene.render(-iod);
+            //C2D_Flush();
+            //C2D_SceneSize(ctru_sys::GSP_SCREEN_WIDTH, ctru_sys::GSP_SCREEN_HEIGHT_TOP, true); // seems to have no effect
             //C2D_SceneTarget(ctx.renderTarget);
             //C2D_SceneBegin(ctx.renderTarget); // calls C2D_SceneTarget which calls C2D_SceneSize
 
             C3D_DrawArrays(GPU_TRIANGLES, 0, cube.len().try_into().unwrap());
 
-            C2D_DrawRectangle(0.0, 0.0, 0.0, 500.0, 500.0, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen);
+            //C2D_DrawRectangle(0.0, 0.0, 0.0, 500.0, 500.0, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen);
 
-            C2D_DrawText(&ctx.text as *const _, 0, 8.0, 8.0, 1.0, 1.0, 1.0);
+            //C2D_DrawText(&ctx.text as *const _, 0, 8.0, 8.0, 1.0, 1.0, 1.0);
         }
         C3D_FrameEnd(0);
     }

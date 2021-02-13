@@ -22,11 +22,6 @@ fn main() {
     compile_shader(
         "vshader.v.pica",
     ).unwrap();
-
-    compile_shader(
-        "render2d.v.pica",
-    ).unwrap();
-
 }
 
 fn compile_shader(in_filename: &str) -> Result<(), Error>{
@@ -35,13 +30,13 @@ fn compile_shader(in_filename: &str) -> Result<(), Error>{
     println!("outdir: {}", out_dir);
 
     // intermediate
-    let mut shbin_path = Path::new(&out_dir).join(in_filename);
+    let mut shbin_path = Path::new(&out_dir).join(in_filename.split(".").next().unwrap());
     shbin_path.set_extension("shbin");
     let shbin_path = shbin_path.into_os_string();
     println!("shbin path: {:?}", &shbin_path);
 
     // final output file
-    let mut out_file = Path::new(&out_dir).join(in_filename);
+    let mut out_file = Path::new(&out_dir).join(in_filename.split(".").next().unwrap());
     out_file.set_extension("shbin.o");
     let out_file = out_file.into_os_string();
     println!("final output path: {:?}", &out_file);
@@ -59,6 +54,7 @@ fn compile_shader(in_filename: &str) -> Result<(), Error>{
 
     picasso_proc.wait()?;
 
+    /*
     let mut bin2s_cmd = Command::new(bin2s_path);
     bin2s_cmd.args(&[&shbin_path]).stdout(Stdio::piped());
     println!("bin2s cmd: {:?}", &bin2s_cmd);
@@ -70,6 +66,8 @@ fn compile_shader(in_filename: &str) -> Result<(), Error>{
     let mut as_proc = as_cmd.spawn()?;
 
     &as_proc.wait()?;
+    */
+
     Ok(())
 }
 
