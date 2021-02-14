@@ -318,7 +318,6 @@ impl Scene {
             // Update the uniforms
             FVUnifMtx4x4(GPU_VERTEX_SHADER, self.uLoc_projection, projection);
             FVUnifMtx4x4(GPU_VERTEX_SHADER, self.uLoc_modelView,  modelView);
-            debug_print(format!("uniforms: {:?} {:?}", projection.m, modelView.m).as_str());
 
             // Draw the VBO
             C3D_DrawArrays(GPU_TRIANGLES, 0, cube.len().try_into().unwrap());
