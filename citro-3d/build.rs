@@ -81,16 +81,19 @@ fn load_models() -> Result<(), Error>{
 
     let input = BufReader::new(File::open("cube.obj")?);
     let obj: Obj<TexturedVertex, u32> = load_obj(input)?;
-    let c3d_vertices: Vec<C3D_Vertex> = obj.vertices
+    let vertices = obj.vertices.clone();
+    let c3d_vertices: Vec<C3D_Vertex> = obj.indices
         .into_iter()
-        .map(|v| C3D_Vertex {
-            x: v.position[0],
-            y: v.position[1],
-            z: v.position[2],
-            nx: v.normal[0],
-            ny: v.normal[1],
-            nz: v.normal[2],
-        }).collect();
+        .map(|i| {
+            let v = &vertices[i as usize];
+            C3D_Vertex {
+                x: v.position[0],
+                y: v.position[1],
+                z: v.position[2],
+                nx: v.normal[0],
+                ny: v.normal[1],
+                nz: v.normal[2],
+        }}).collect();
 
     let mut consts = consts.finish_dependencies();
     consts.add_array("cube", "C3D_Vertex", c3d_vertices.as_slice());
