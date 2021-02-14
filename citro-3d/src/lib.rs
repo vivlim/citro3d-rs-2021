@@ -13,7 +13,7 @@ extern crate lazy_static;
 use std::{default::Default, ffi::c_void, mem::size_of};
 use std::ffi::CString;
 use citro_3d_sys::*;
-use ctru_sys::{DVLB_s, GPU_RB_DEPTH24_STENCIL8, gfxSet3D, shaderProgram_s};
+use ctru_sys::{DVLB_s, GPU_RB_DEPTH24_STENCIL8, gfxSet3D, linearAlloc, shaderProgram_s};
 use std::convert::TryInto;
 use cgmath::{Deg, Rad, Matrix4, Vector4, Matrix, SquareMatrix};
 #[macro_use]
@@ -44,9 +44,6 @@ pub struct CitroLibContext {
     clrGreen: u32,
     clrBlack: u32,
     clrClear: u32,
-    textBuf: *mut C2D_TextBuf_s,
-    text: C2D_Text,
-    textString: CString,
     scene: Scene,
 }
 
@@ -57,7 +54,15 @@ pub struct Scene {
     uLoc_modelView: i8,
     vbo_attrInfo: C3D_AttrInfo,
     vbo_bufInfo: C3D_BufInfo,
+    vbo_data: *mut c_void,
     projection: Matrix4<f32>,
+    lightenv: C3D_LightEnv,
+    light: C3D_Light,
+    lut_spec: C3D_LightLut,
+    textString: CString,
+    text: C2D_Text,
+    textBuf: *mut C2D_TextBuf_s,
+    angley: f32,
 }
 
 fn GX_TRANSFER_FLIP_VERT(x: u32) -> u32 {
@@ -92,7 +97,7 @@ pub fn init() -> CitroLibContext {
     unsafe {
         C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 
-        //C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+        C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
         //C2D_Prepare();
         //let renderTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
         let mut depthFmt = C3D_DEPTHTYPE::default();
@@ -132,20 +137,35 @@ pub fn init() -> CitroLibContext {
         let mut vbo_attrInfo: C3D_AttrInfo = Default::default();
         let mut vbo_bufInfo: C3D_BufInfo = Default::default();
 
-        /*
         AttrInfo_Init(&mut vbo_attrInfo);
-        AttrInfo_AddLoader(&mut vbo_attrInfo, 0, GPU_FLOAT, 3); // v0=position
-        AttrInfo_AddLoader(&mut vbo_attrInfo, 1, GPU_FLOAT, 2); // v1=texcoord
-        AttrInfo_AddLoader(&mut vbo_attrInfo, 2, GPU_FLOAT, 3); // v2=normal
+        let mut attr_addloader_rets: [i32; 3] = Default::default();
+        attr_addloader_rets[0] = AttrInfo_AddLoader(&mut vbo_attrInfo, 0, GPU_FLOAT, 3); // v0=position
+        attr_addloader_rets[1] = AttrInfo_AddLoader(&mut vbo_attrInfo, 1, GPU_FLOAT, 2); // v1=texcoord
+        attr_addloader_rets[2] = AttrInfo_AddLoader(&mut vbo_attrInfo, 2, GPU_FLOAT, 3); // v2=normal
 
+        debug_print(format!("attr info: {:?} {:?}", &vbo_attrInfo, attr_addloader_rets).as_str());
         BufInfo_Init(&mut vbo_bufInfo);
-        BufInfo_Add(&mut vbo_bufInfo, cube.as_ptr() as *const c_void, size_of::<C3D_Vertex>().try_into().unwrap(), 3, 0x210);
-        debug_print(format!("cube sample: {:?}, {}", cube[0], cube.len()).as_ref());
+        let size_of_vbo_data = std::mem::size_of::<C3D_Vertex>() * cube.len();
+        let mut vbo_data = linearAlloc(size_of_vbo_data as u32);
+        std::ptr::copy_nonoverlapping(cube.as_ptr(), vbo_data as *mut C3D_Vertex, size_of_vbo_data); // must be copied to memory allocated by linearAlloc
+        let id = BufInfo_Add(&mut vbo_bufInfo, vbo_data, size_of::<C3D_Vertex>().try_into().unwrap(), 3, 0x210);
+        debug_print(format!("cube sample: {:?}, count {} size {} loaded to id {}", cube[0], cube.len(), size_of_vbo_data, id).as_ref());
 
+        let mut lightenv: C3D_LightEnv = Default::default();
+        let mut light: C3D_Light = Default::default();
+        let mut lut_spec: C3D_LightLut = Default::default();
+
+        C3D_LightEnvInit(&mut lightenv as *mut _);
+        C3D_LightEnvMaterial(&mut lightenv as *mut _, &mut material as *const _);
+
+        //LightLut_Phong(&mut lut_Spec as *mut _, 20.0f);
+        LightLut_Phong(&mut lut_spec as *mut _, 20.0);
+        C3D_LightEnvLut(&mut lightenv as *mut _, GPU_LUT_D0, GPU_LUTINPUT_NH, false, &mut lut_spec as *mut _);
+
+        C3D_LightInit(&mut light as *mut _, &mut lightenv as *mut _);
 
         debug_print("init: c3d render target set output");
 
-        */
         let clrWhite = C2D_Color32(0xFF, 0xFF, 0xFF, 0xFF);
         let clrGreen = C2D_Color32(0x00, 0xFF, 0x00, 0xFF);
         let clrBlack = C2D_Color32(0x00, 0x00, 0x00, 0xFF);
@@ -159,22 +179,31 @@ pub fn init() -> CitroLibContext {
 
         debug_print("done init");
 
+        // i don't have the ability to run a unit test yet so just do some stuff here.
+        do_tests();
+
+
         CitroLibContext {
             renderTarget,
             clrWhite,
             clrGreen,
             clrBlack,
             clrClear,
-            textBuf,
-            text,
-            textString,
             scene: Scene {
                 program,
                 uLoc_projection,
                 uLoc_modelView,
                 vbo_attrInfo,
                 vbo_bufInfo,
-                projection: Matrix4::identity()
+                vbo_data,
+                projection: Matrix4::identity(),
+                lightenv,
+                light,
+                lut_spec,
+                textString,
+                text,
+                textBuf,
+                angley: 0.0,
             }
         }
     }
@@ -187,14 +216,26 @@ pub fn exit() {
     }
 }
 
-fn VecToC3D(v: Vector4<f32>) -> C3D_FVec {
+fn VecToC3D(v: &Vector4<f32>) -> C3D_FVec {
     C3D_FVec {c: [v.w, v.z, v.y, v.x]}
 }
 
-pub fn MatrixToC3D(m: cgmath::Matrix4<f32>) -> C3D_Mtx {
+pub fn MatrixToC3D(m: &cgmath::Matrix4<f32>) -> C3D_Mtx {
     C3D_Mtx {
-        r: [VecToC3D(m.row(0)), VecToC3D(m.row(1)), VecToC3D(m.row(2)), VecToC3D(m.row(3))]
+        r: [VecToC3D(&m.row(0)), VecToC3D(&m.row(1)), VecToC3D(&m.row(2)), VecToC3D(&m.row(3))]
     }
+}
+
+pub unsafe fn C3DToVec(v: &C3D_FVec) -> Vector4<f32> {
+    Vector4::new(v.c[3], v.c[2], v.c[1], v.c[0])
+}
+pub unsafe fn C3DToMatrix(m: &C3D_Mtx) -> Matrix4<f32> {
+    Matrix4::from_cols(
+        C3DToVec(&m.r[0]),
+        C3DToVec(&m.r[1]),
+        C3DToVec(&m.r[2]),
+        C3DToVec(&m.r[3]),
+    )
 }
 
 pub unsafe fn FVUnifMtx4x4(shader: GPU_SHADER_TYPE, id: i8, mut m: C3D_Mtx){
@@ -220,7 +261,6 @@ pub unsafe fn FVUnifMtx4x4(shader: GPU_SHADER_TYPE, id: i8, mut m: C3D_Mtx){
 
 impl Scene {
     fn bind(&mut self){
-        debug_print("enter bind");
         unsafe {
             // ... ... there has to be some better way :(
             let program_c3d = std::mem::transmute::<*mut ctru_sys::shaderProgram_s, *mut citro_3d_sys::shaderProgram_s>(&mut self.program as *mut ctru_sys::shaderProgram_s);
@@ -228,9 +268,12 @@ impl Scene {
             C3D_BindProgram(program_c3d);
             C3D_SetAttrInfo(&mut self.vbo_attrInfo as *mut _);
             C3D_SetBufInfo(&mut self.vbo_bufInfo as *mut _);
-            //C3D_LightEnvBind(&lightEnv);
-            C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
-            C3D_CullFace(GPU_CULL_BACK_CCW);
+            C3D_LightEnvBind(&mut self.lightenv);
+            //C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+            //C3D_CullFace(GPU_CULL_BACK_CCW);
+            // idk trying some stuff
+            C3D_DepthTest(false, GPU_GREATER, GPU_WRITE_ALL);
+            C3D_CullFace(GPU_CULL_NONE);
 
             // Configure the first fragment shading substage to blend the fragment primary color
             // with the fragment secondary color.
@@ -241,53 +284,52 @@ impl Scene {
             C3D_TexEnvFunc(env, C3D_Both, ctru_sys::GPU_ADD);
 
             // Clear out the other texenvs
+            /*
+            idk what commenting this out does
             C3D_TexEnvInit(C3D_GetTexEnv(1));
             C3D_TexEnvInit(C3D_GetTexEnv(2));
             C3D_TexEnvInit(C3D_GetTexEnv(3));
             C3D_TexEnvInit(C3D_GetTexEnv(4));
             C3D_TexEnvInit(C3D_GetTexEnv(5));
+            */
         }
-        debug_print("exit bind");
     }
 
     fn render(&mut self, iod: f32){
-        debug_print("enter render");
         unsafe {
             self.bind();
 
+            let mut projection = MatrixToC3D(&self.projection);
             // Compute the projection matrix
-            //Mtx_PerspStereoTilt(&mut self.projection, 40.0*std::f32::consts::TAU / 360.0, C3D_AspectRatioTop, 0.01, 1000.0, iod, 2.0, false);
+            Mtx_PerspStereoTilt(&mut projection, 40.0*std::f32::consts::TAU / 360.0, C3D_AspectRatioTop as f32, 0.01, 1000.0, iod, 2.0, false);
 
             let objPos = C3D_FVec { __bindgen_anon_1: C3D_FVec__bindgen_ty_1 {
                 w: 0.0, z: 0.0, y: -3.0, x: 1.0
             }};
-            let lightPos = C3D_FVec { __bindgen_anon_1: C3D_FVec__bindgen_ty_1 {
+            let mut lightPos = C3D_FVec { __bindgen_anon_1: C3D_FVec__bindgen_ty_1 {
                 w: 0.0, z: 0.0, y: -0.5, x: 1.0
             }};
 
             // Calculate the modelView matrix
-            let mut modelView = MatrixToC3D(Matrix4::identity());
+            let mut modelView = MatrixToC3D(&Matrix4::identity());
             Mtx_Translate(&mut modelView, objPos.__bindgen_anon_1.x, objPos.__bindgen_anon_1.y, objPos.__bindgen_anon_1.z, true);
-            Mtx_RotateY(&mut modelView, std::f32::consts::TAU * 0.5, true);
-            Mtx_Scale(&mut modelView, 2.0, 2.0, 2.0);
+            Mtx_RotateY(&mut modelView, std::f32::consts::TAU * self.angley, true);
+            Mtx_Scale(&mut modelView, 20.0, 20.0, 20.0);
 
-            //C3D_LightPosition(&light, &lightPos);
+            C3D_LightPosition(&mut self.light as *mut _, &mut lightPos as *mut _);
 
-            debug_print("before update uniforms");
             // Update the uniforms
-            FVUnifMtx4x4(GPU_VERTEX_SHADER, self.uLoc_projection, MatrixToC3D(self.projection.clone()));
+            FVUnifMtx4x4(GPU_VERTEX_SHADER, self.uLoc_projection, projection);
             FVUnifMtx4x4(GPU_VERTEX_SHADER, self.uLoc_modelView,  modelView);
+            //debug_print(format!("uniforms: {:?} {:?}", projection.m, modelView.m).as_str());
 
-            debug_print("before draw vbo");
             // Draw the VBO
             C3D_DrawArrays(GPU_TRIANGLES, 0, cube.len().try_into().unwrap());
 
-            /*
             // Draw the 2d scene
-            C2D_Prepare();
-            C2D_DrawText(&txt_helloWorld, 0, 8.0, 8.0, 1.0, 1.0, 1.0);
-            C2D_Flush();
-            */
+            //C2D_Prepare();
+            //C2D_DrawText(&self.text, 0, 8.0, 8.0, 1.0, 1.0, 1.0);
+            //C2D_Flush();
         }
     }
 }
@@ -303,6 +345,8 @@ pub fn on_main_loop(ctx: &mut CitroLibContext){
         println!("\x1b[4;1HCmdBuf:  {:.2}\x1b[K", C3D_GetCmdBufUsage()*100.0);
         println!("{:?}", shbin_data.len()); // unmapped read. how do i get it to point at the actual shader...
 
+        ctx.scene.angley += 1.0/256.0;
+
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW.try_into().unwrap());
         {
@@ -310,18 +354,59 @@ pub fn on_main_loop(ctx: &mut CitroLibContext){
             C3D_FrameBufClear(&mut (*ctx.renderTarget).frameBuf, C3D_CLEAR_ALL, ctx.clrClear, 0);
 
             C3D_FrameDrawOn(ctx.renderTarget);
+            C2D_SceneTarget(ctx.renderTarget);
             ctx.scene.render(-iod);
             //C2D_Flush();
             //C2D_SceneSize(ctru_sys::GSP_SCREEN_WIDTH, ctru_sys::GSP_SCREEN_HEIGHT_TOP, true); // seems to have no effect
-            //C2D_SceneTarget(ctx.renderTarget);
             //C2D_SceneBegin(ctx.renderTarget); // calls C2D_SceneTarget which calls C2D_SceneSize
-
-            C3D_DrawArrays(GPU_TRIANGLES, 0, cube.len().try_into().unwrap());
-
-            //C2D_DrawRectangle(0.0, 0.0, 0.0, 500.0, 500.0, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen);
+            C2D_Prepare();
+            C2D_DrawRectangle(ctx.scene.angley, 0.0, 0.0, 40.0, 40.0, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen);
+            C2D_Flush();
 
             //C2D_DrawText(&ctx.text as *const _, 0, 8.0, 8.0, 1.0, 1.0, 1.0);
         }
         C3D_FrameEnd(0);
     }
+}
+
+pub unsafe fn do_tests(){
+    let start = Matrix4::identity();
+    let converted = MatrixToC3D(&start);
+    let back = C3DToMatrix(&converted);
+
+    //debug_print(format!("start: {:?}, conv: {:?}, end: {:?}", start, converted.r.iter().map(|r| Vec::<f32>::from(r.c.iter().collect())), back).as_str());
+    debug_print(format!("start: {:?}, end: {:?}", start, back).as_str());
+
+    // try creating a raw one
+    let raw_identity = C3D_Mtx {
+        r: [
+            // w, z, y, x
+            C3D_FVec { c: [0.0, 0.0, 0.0, 1.0]},
+            C3D_FVec { c: [0.0, 0.0, 1.0, 0.0]},
+            C3D_FVec { c: [0.0, 1.0, 0.0, 0.0]},
+            C3D_FVec { c: [1.0, 0.0, 0.0, 0.0]},
+        ]
+    };
+
+    debug_print(format!("raw id: {:?}", C3DToMatrix(&raw_identity)).as_str());
+
+}
+
+#[cfg(test)]
+mod tests {
+    use cgmath::Matrix4;
+
+    use crate::{C3DToMatrix, MatrixToC3D};
+
+    #[test]
+    fn matrix_conversions() {
+        let start = Matrix4::identity();
+
+        let converted = MatrixToC3D(&start);
+
+        let back = C3DToMatrix(&converted);
+
+        assert_eq!(start, back);
+    }
+
 }

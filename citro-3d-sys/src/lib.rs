@@ -12,6 +12,7 @@ mod bindings;
 #[allow(non_snake_case)]
 #[allow(dead_code)]
 mod inlines {
+
     use crate::bindings::*;
     pub fn C2D_Clamp(x: f32, min: f32, max: f32) -> f32 
     {
@@ -50,6 +51,14 @@ mod inlines {
     
     pub unsafe fn C2D_SceneTarget(target: *mut C3D_RenderTarget){
         C2D_SceneSize(u32::from((*target).frameBuf.width), u32::from((*target).frameBuf.height), (*target).linked)
+    }
+
+    pub unsafe fn LightLut_Phong(lut: *mut C3D_LightLut, shininess: f32){
+        LightLut_FromFunc(lut, Some(powf), shininess, false);
+    }
+
+    pub extern fn powf(base: f32, exp: f32) -> f32{
+        base.powf(exp)
     }
 
 }
