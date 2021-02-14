@@ -146,7 +146,7 @@ pub fn init() -> CitroLibContext {
         BufInfo_Init(&mut *vbo_bufInfo);
         let size_of_vbo_data = std::mem::size_of::<C3D_Vertex>() * cube.len();
         let mut vbo_data = linearAlloc(size_of_vbo_data as u32);
-        std::ptr::copy_nonoverlapping(cube.as_ptr(), vbo_data as *mut C3D_Vertex, size_of_vbo_data); // must be copied to memory allocated by linearAlloc
+        std::ptr::copy_nonoverlapping(cube.as_ptr(), vbo_data as *mut C3D_Vertex, cube.len()); // must be copied to memory allocated by linearAlloc
         let id = BufInfo_Add(&mut *vbo_bufInfo, vbo_data, size_of::<C3D_Vertex>().try_into().unwrap(), 2, 0x10);
         debug_print(format!("cube sample: {:?}, count {} size {} loaded to id {}", cube[0], cube.len(), size_of_vbo_data, id).as_ref());
 
