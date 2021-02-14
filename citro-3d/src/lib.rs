@@ -102,7 +102,7 @@ pub fn init() -> CitroLibContext {
         //let renderTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
         let mut depthFmt = Box::from(C3D_DEPTHTYPE::default());
         depthFmt.__e = GPU_RB_DEPTH24_STENCIL8;
-        let renderTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, *depthFmt);
+        let renderTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, C3D_DEPTHTYPE {__e: GPU_RB_DEPTH24_STENCIL8});
         C3D_RenderTargetSetOutput(renderTarget, GFX_TOP, GFX_LEFT,
             GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
             GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
@@ -242,7 +242,7 @@ pub unsafe fn FVUnifMtx4x4(shader: GPU_SHADER_TYPE, id: i8, mut m: C3D_Mtx){
     let id = id as usize;
     // Set dirty bits
     for i in 0..4 {
-        C3D_FVUnifDirty[shader][id+1] = true;
+        C3D_FVUnifDirty[shader][id+i] = true;
     }
 
     // ???
@@ -251,9 +251,12 @@ pub unsafe fn FVUnifMtx4x4(shader: GPU_SHADER_TYPE, id: i8, mut m: C3D_Mtx){
     let mut destination = std::mem::transmute::<&mut [f32; 4], &mut [[f32; 4];4]>(destination_start);
     let mut source = &mut m.r; // row access
 
-    for i in 0..source.len() {
-        // Vector access
-        destination[i] = source[i].c
+    for i in 0..4 {
+        let destination_rows = &mut C3D_FVUnif[shader][id+i].__bindgen_anon_1;
+        destination_rows.x = source[i].__bindgen_anon_1.x;
+        destination_rows.y = source[i].__bindgen_anon_1.y;
+        destination_rows.z = source[i].__bindgen_anon_1.z;
+        destination_rows.w = source[i].__bindgen_anon_1.w;
     }
 
 }
@@ -298,24 +301,24 @@ impl Scene {
             Mtx_PerspStereoTilt(&mut projection, 40.0*std::f32::consts::TAU / 360.0, C3D_AspectRatioTop as f32, 0.01, 1000.0, iod, 2.0, false);
 
             let objPos = C3D_FVec { __bindgen_anon_1: C3D_FVec__bindgen_ty_1 {
-                w: 0.0, z: 0.0, y: -3.0, x: 1.0
+                w: 1.0, z: -3.0, y: 0.0, x: 0.0
             }};
             let mut lightPos = C3D_FVec { __bindgen_anon_1: C3D_FVec__bindgen_ty_1 {
-                w: 0.0, z: 0.0, y: -0.5, x: 1.0
+                w: 1.0, z: -0.5, y: 0.0, x: 0.0
             }};
 
             // Calculate the modelView matrix
             let mut modelView = MatrixToC3D(&Matrix4::identity());
             Mtx_Translate(&mut modelView, objPos.__bindgen_anon_1.x, objPos.__bindgen_anon_1.y, objPos.__bindgen_anon_1.z, true);
             Mtx_RotateY(&mut modelView, std::f32::consts::TAU * self.angley, true);
-            Mtx_Scale(&mut modelView, 20.0, 20.0, 20.0);
+            Mtx_Scale(&mut modelView, 2.0, 2.0, 2.0);
 
             C3D_LightPosition(&mut *self.light as *mut _, &mut lightPos as *mut _);
 
             // Update the uniforms
             FVUnifMtx4x4(GPU_VERTEX_SHADER, self.uLoc_projection, projection);
             FVUnifMtx4x4(GPU_VERTEX_SHADER, self.uLoc_modelView,  modelView);
-            //debug_print(format!("uniforms: {:?} {:?}", projection.m, modelView.m).as_str());
+            debug_print(format!("uniforms: {:?} {:?}", projection.m, modelView.m).as_str());
 
             // Draw the VBO
             C3D_DrawArrays(GPU_TRIANGLES, 0, cube.len().try_into().unwrap());
