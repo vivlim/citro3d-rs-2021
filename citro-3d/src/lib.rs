@@ -13,7 +13,7 @@ extern crate lazy_static;
 use std::{default::Default, ffi::c_void, mem::size_of};
 use std::ffi::CString;
 use citro_3d_sys::*;
-use ctru_sys::{DVLB_s, GPU_RB_DEPTH24_STENCIL8, gfxSet3D, linearAlloc, shaderProgram_s};
+use ctru_sys::{DVLB_s, GPU_RB_DEPTH24_STENCIL8, gfxSet3D, linearAlloc, osSharedConfig_s, shaderProgram_s};
 use std::convert::TryInto;
 use cgmath::{Deg, Rad, Matrix4, Vector4, Matrix, SquareMatrix};
 #[macro_use]
@@ -39,7 +39,8 @@ const material: C3D_Material = C3D_Material {
 
 
 pub struct CitroLibContext {
-    renderTarget: *mut C3D_RenderTarget,
+    renderTargetLeft: *mut C3D_RenderTarget,
+    renderTargetRight: *mut C3D_RenderTarget,
     clrWhite: u32,
     clrGreen: u32,
     clrBlack: u32,
@@ -102,8 +103,14 @@ pub fn init() -> CitroLibContext {
         //let renderTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
         let mut depthFmt = Box::from(C3D_DEPTHTYPE::default());
         depthFmt.__e = GPU_RB_DEPTH24_STENCIL8;
-        let renderTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, C3D_DEPTHTYPE {__e: GPU_RB_DEPTH24_STENCIL8});
-        C3D_RenderTargetSetOutput(renderTarget, GFX_TOP, GFX_LEFT,
+        let renderTargetLeft = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, C3D_DEPTHTYPE {__e: GPU_RB_DEPTH24_STENCIL8});
+        let renderTargetRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, C3D_DEPTHTYPE {__e: GPU_RB_DEPTH24_STENCIL8});
+        C3D_RenderTargetSetOutput(renderTargetLeft, GFX_TOP, GFX_LEFT,
+            GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
+            GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
+            GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+
+        C3D_RenderTargetSetOutput(renderTargetRight, GFX_TOP, GFX_RIGHT,
             GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
             GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
             GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
@@ -183,7 +190,8 @@ pub fn init() -> CitroLibContext {
 
 
         CitroLibContext {
-            renderTarget,
+            renderTargetLeft,
+            renderTargetRight,
             clrWhite,
             clrGreen,
             clrBlack,
@@ -332,25 +340,25 @@ impl Scene {
 
 pub fn on_main_loop(ctx: &mut CitroLibContext){
     unsafe {
-        //let iod: f32 = ctru_sys::osGet3DSliderState()/3;
-        let iod = 0.0;
+        let os_config = *(ctru_sys::OS_SHAREDCFG_VADDR as *const osSharedConfig_s);
+        let iod = os_config.slider_3d/3.0;
 
         println!("\x1b[1;1HSimple citro2d shapes example");
         println!("\x1b[2;1HCPU:     {:.2}\x1b[K", C3D_GetProcessingTime()*6.0);
         println!("\x1b[3;1HGPU:     {:.2}\x1b[K", C3D_GetDrawingTime()*6.0);
         println!("\x1b[4;1HCmdBuf:  {:.2}\x1b[K", C3D_GetCmdBufUsage()*100.0);
+        println!("\x1b[5;1HIOD:  {:.2}\x1b[K", iod);
         println!("{:?}", shbin_data.len()); // unmapped read. how do i get it to point at the actual shader...
 
         ctx.scene.angley += 1.0/256.0;
 
-
         assert!(C3D_FrameBegin(C3D_FRAME_SYNCDRAW.try_into().unwrap()));
         {
             // C3D_RenderTargetClear is an inline we don't get generated, just call C3D_FrameBufClear directly.
-            C3D_FrameBufClear(&mut (*ctx.renderTarget).frameBuf, C3D_CLEAR_ALL, ctx.clrClear, 0);
+            C3D_FrameBufClear(&mut (*ctx.renderTargetLeft).frameBuf, C3D_CLEAR_ALL, ctx.clrClear, 0);
 
-            assert!(C3D_FrameDrawOn(ctx.renderTarget));
-            C2D_SceneTarget(ctx.renderTarget);
+            assert!(C3D_FrameDrawOn(ctx.renderTargetLeft));
+            C2D_SceneTarget(ctx.renderTargetLeft);
             ctx.scene.render(-iod);
             //C2D_Flush();
             //C2D_SceneSize(ctru_sys::GSP_SCREEN_WIDTH, ctru_sys::GSP_SCREEN_HEIGHT_TOP, true); // seems to have no effect
@@ -359,6 +367,15 @@ pub fn on_main_loop(ctx: &mut CitroLibContext){
             C2D_DrawRectangle(ctx.scene.angley, 0.0, 0.0, 40.0, 40.0, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen);
             C2D_Flush();
 
+            if (iod > 0.0){
+                C3D_FrameBufClear(&mut (*ctx.renderTargetRight).frameBuf, C3D_CLEAR_ALL, ctx.clrClear, 0);
+                assert!(C3D_FrameDrawOn(ctx.renderTargetRight));
+                C2D_SceneTarget(ctx.renderTargetRight);
+                ctx.scene.render(iod);
+                C2D_Prepare();
+                C2D_DrawRectangle(ctx.scene.angley, 0.0, 0.0, 40.0, 40.0, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen, ctx.clrGreen);
+                C2D_Flush();
+            }
             //C2D_DrawText(&ctx.text as *const _, 0, 8.0, 8.0, 1.0, 1.0, 1.0);
         }
         C3D_FrameEnd(0);
