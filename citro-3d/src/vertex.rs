@@ -1,7 +1,10 @@
 #[repr(C)]
 #[derive(Debug)]
 pub struct C3D_Vertex {
-    pub position: [f32; 3],
-    pub texcoord: [f32; 2],
-    pub normal: [f32; 3],
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub nx: f32,
+    pub ny: f32,
+    pub nz: f32,
 }

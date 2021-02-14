@@ -49,18 +49,18 @@ pub struct CitroLibContext {
 
 pub struct Scene {
     //shader_dvlb: *mut DVLB_s,
-    program: ctru_sys::shaderProgram_s,
+    program: Box<ctru_sys::shaderProgram_s>,
     uLoc_projection: i8,
     uLoc_modelView: i8,
-    vbo_attrInfo: C3D_AttrInfo,
-    vbo_bufInfo: C3D_BufInfo,
+    vbo_attrInfo: Box<C3D_AttrInfo>,
+    vbo_bufInfo: Box<C3D_BufInfo>,
     vbo_data: *mut c_void,
-    projection: Matrix4<f32>,
-    lightenv: C3D_LightEnv,
-    light: C3D_Light,
-    lut_spec: C3D_LightLut,
-    textString: CString,
-    text: C2D_Text,
+    projection: Box<Matrix4<f32>>,
+    lightenv: Box<C3D_LightEnv>,
+    light: Box<C3D_Light>,
+    lut_spec: Box<C3D_LightLut>,
+    textString: Box<CString>,
+    text: Box<C2D_Text>,
     textBuf: *mut C2D_TextBuf_s,
     angley: f32,
 }
@@ -100,9 +100,9 @@ pub fn init() -> CitroLibContext {
         C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
         //C2D_Prepare();
         //let renderTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
-        let mut depthFmt = C3D_DEPTHTYPE::default();
+        let mut depthFmt = Box::from(C3D_DEPTHTYPE::default());
         depthFmt.__e = GPU_RB_DEPTH24_STENCIL8;
-        let renderTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, depthFmt);
+        let renderTarget = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, *depthFmt);
         C3D_RenderTargetSetOutput(renderTarget, GFX_TOP, GFX_LEFT,
             GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
             GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
@@ -116,14 +116,14 @@ pub fn init() -> CitroLibContext {
         if shader_dvlb.is_null(){
             panic!("shader DVLB parse failed (it was {:?}, from {:x?}", shader_dvlb, shbin_data);
         }
-        let mut program: ctru_sys::shaderProgram_s = ctru_sys::shaderProgram_s::default();
-        let init_ret = ctru_sys::shaderProgramInit(&mut program as *mut _);
+        let mut program: Box<ctru_sys::shaderProgram_s> = Default::default();
+        let init_ret = ctru_sys::shaderProgramInit(&mut *program as *mut _);
 
         let shader_dvle = (*(shader_dvlb as *mut ctru_sys::DVLB_s)).DVLE;
         if shader_dvle.is_null(){
             panic!("shader dvle is null");
         }
-        let setvsh_ret = ctru_sys::shaderProgramSetVsh(&mut program, shader_dvle);
+        let setvsh_ret = ctru_sys::shaderProgramSetVsh(&mut *program, shader_dvle);
         debug_print(format!("program {:?} rets: {} {}", shader_dvlb, init_ret, setvsh_ret).as_ref());
 
 
@@ -134,35 +134,34 @@ pub fn init() -> CitroLibContext {
         debug_print(format!("uloc_proj/mv: {}, {}", uLoc_modelView, uLoc_projection).as_ref());
 
         // Configure attributes for use with the vertex shader
-        let mut vbo_attrInfo: C3D_AttrInfo = Default::default();
-        let mut vbo_bufInfo: C3D_BufInfo = Default::default();
+        let mut vbo_attrInfo: Box<C3D_AttrInfo> = Default::default();
+        let mut vbo_bufInfo: Box<C3D_BufInfo> = Default::default();
 
-        AttrInfo_Init(&mut vbo_attrInfo);
-        let mut attr_addloader_rets: [i32; 3] = Default::default();
-        attr_addloader_rets[0] = AttrInfo_AddLoader(&mut vbo_attrInfo, 0, GPU_FLOAT, 3); // v0=position
-        attr_addloader_rets[1] = AttrInfo_AddLoader(&mut vbo_attrInfo, 1, GPU_FLOAT, 2); // v1=texcoord
-        attr_addloader_rets[2] = AttrInfo_AddLoader(&mut vbo_attrInfo, 2, GPU_FLOAT, 3); // v2=normal
+        AttrInfo_Init(&mut *vbo_attrInfo);
+        let mut attr_addloader_rets: Box<[i32; 3]> = Default::default();
+        attr_addloader_rets[0] = AttrInfo_AddLoader(&mut *vbo_attrInfo, 0, GPU_FLOAT, 3); // v0=position
+        attr_addloader_rets[1] = AttrInfo_AddLoader(&mut *vbo_attrInfo, 1, GPU_FLOAT, 3); // v1=normal
 
         debug_print(format!("attr info: {:?} {:?}", &vbo_attrInfo, attr_addloader_rets).as_str());
-        BufInfo_Init(&mut vbo_bufInfo);
+        BufInfo_Init(&mut *vbo_bufInfo);
         let size_of_vbo_data = std::mem::size_of::<C3D_Vertex>() * cube.len();
         let mut vbo_data = linearAlloc(size_of_vbo_data as u32);
         std::ptr::copy_nonoverlapping(cube.as_ptr(), vbo_data as *mut C3D_Vertex, size_of_vbo_data); // must be copied to memory allocated by linearAlloc
-        let id = BufInfo_Add(&mut vbo_bufInfo, vbo_data, size_of::<C3D_Vertex>().try_into().unwrap(), 3, 0x210);
+        let id = BufInfo_Add(&mut *vbo_bufInfo, vbo_data, size_of::<C3D_Vertex>().try_into().unwrap(), 2, 0x10);
         debug_print(format!("cube sample: {:?}, count {} size {} loaded to id {}", cube[0], cube.len(), size_of_vbo_data, id).as_ref());
 
-        let mut lightenv: C3D_LightEnv = Default::default();
-        let mut light: C3D_Light = Default::default();
-        let mut lut_spec: C3D_LightLut = Default::default();
+        let mut lightenv: Box<C3D_LightEnv> = Default::default();
+        let mut light: Box<C3D_Light> = Default::default();
+        let mut lut_spec: Box<C3D_LightLut> = Default::default();
 
-        C3D_LightEnvInit(&mut lightenv as *mut _);
-        C3D_LightEnvMaterial(&mut lightenv as *mut _, &mut material as *const _);
+        C3D_LightEnvInit(&mut *lightenv as *mut _);
+        C3D_LightEnvMaterial(&mut *lightenv as *mut _, &mut material as *const _);
 
         //LightLut_Phong(&mut lut_Spec as *mut _, 20.0f);
-        LightLut_Phong(&mut lut_spec as *mut _, 20.0);
-        C3D_LightEnvLut(&mut lightenv as *mut _, GPU_LUT_D0, GPU_LUTINPUT_NH, false, &mut lut_spec as *mut _);
+        LightLut_Phong(&mut *lut_spec as *mut _, 20.0);
+        C3D_LightEnvLut(&mut *lightenv as *mut _, GPU_LUT_D0, GPU_LUTINPUT_NH, false, &mut *lut_spec as *mut _);
 
-        C3D_LightInit(&mut light as *mut _, &mut lightenv as *mut _);
+        C3D_LightInit(&mut *light as *mut _, &mut *lightenv as *mut _);
 
         debug_print("init: c3d render target set output");
 
@@ -172,10 +171,10 @@ pub fn init() -> CitroLibContext {
         let clrClear = C2D_Color32(0xFF, 0xD8, 0xB0, 0x68);
 
         let mut textBuf = C2D_TextBufNew(128);
-        let mut text = C2D_Text::default();
-        let textString = CString::new("hello world").unwrap();
-        C2D_TextParse(&mut text as *mut _, textBuf, textString.as_ptr() as *const u8);
-        C2D_TextOptimize(&mut text as *mut _);
+        let mut text = Box::from(C2D_Text::default());
+        let textString: Box<CString> = Box::from(CString::new("hello world").unwrap());
+        C2D_TextParse(&mut *text as *mut _, textBuf, textString.as_ptr() as *const u8);
+        C2D_TextOptimize(&mut *text as *mut _);
 
         debug_print("done init");
 
@@ -196,7 +195,7 @@ pub fn init() -> CitroLibContext {
                 vbo_attrInfo,
                 vbo_bufInfo,
                 vbo_data,
-                projection: Matrix4::identity(),
+                projection: Box::from(Matrix4::identity()),
                 lightenv,
                 light,
                 lut_spec,
@@ -248,13 +247,13 @@ pub unsafe fn FVUnifMtx4x4(shader: GPU_SHADER_TYPE, id: i8, mut m: C3D_Mtx){
 
     // ???
     /// [   2.132186] Debug.Emulated <Debug> core/hle/kernel/svc.cpp:OutputDebugString:832: thread 'main' panicked at 'index out of bounds: the len is 96 but the index is 4294967295', /home/vivlim/git/citro-3d-rs/citro-3d/src/lib.rs:174:32
-    let mut destination = &mut C3D_FVUnif[shader][id];
-    let mut destination = std::mem::transmute::<&mut C3D_FVec, &mut [C3D_FVec; 4]>(destination);
+    let mut destination_start = &mut C3D_FVUnif[shader][id].c;
+    let mut destination = std::mem::transmute::<&mut [f32; 4], &mut [[f32; 4];4]>(destination_start);
     let mut source = &mut m.r; // row access
 
     for i in 0..source.len() {
         // Vector access
-        destination[i] = source[i]
+        destination[i] = source[i].c
     }
 
 }
@@ -263,35 +262,30 @@ impl Scene {
     fn bind(&mut self){
         unsafe {
             // ... ... there has to be some better way :(
-            let program_c3d = std::mem::transmute::<*mut ctru_sys::shaderProgram_s, *mut citro_3d_sys::shaderProgram_s>(&mut self.program as *mut ctru_sys::shaderProgram_s);
+            let program_c3d = std::mem::transmute::<*mut ctru_sys::shaderProgram_s, *mut citro_3d_sys::shaderProgram_s>(&mut *self.program as *mut ctru_sys::shaderProgram_s);
 
             C3D_BindProgram(program_c3d);
-            C3D_SetAttrInfo(&mut self.vbo_attrInfo as *mut _);
-            C3D_SetBufInfo(&mut self.vbo_bufInfo as *mut _);
-            C3D_LightEnvBind(&mut self.lightenv);
-            //C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
-            //C3D_CullFace(GPU_CULL_BACK_CCW);
-            // idk trying some stuff
-            C3D_DepthTest(false, GPU_GREATER, GPU_WRITE_ALL);
-            C3D_CullFace(GPU_CULL_NONE);
+            C3D_SetAttrInfo(&mut *self.vbo_attrInfo as *mut _);
+            C3D_SetBufInfo(&mut *self.vbo_bufInfo as *mut _);
+            C3D_LightEnvBind(&mut *self.lightenv);
+            C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+            C3D_CullFace(GPU_CULL_BACK_CCW);
 
             // Configure the first fragment shading substage to blend the fragment primary color
             // with the fragment secondary color.
             // See https://www.opengl.org/sdk/docs/man2/xhtml/glTexEnv.xml for more insight
             let mut env = C3D_GetTexEnv(0);
+            assert!(env != std::ptr::null_mut(), "{:?}", env);
             C3D_TexEnvInit(env);
             C3D_TexEnvSrc(env, C3D_Both, ctru_sys::GPU_FRAGMENT_PRIMARY_COLOR, Some(ctru_sys::GPU_FRAGMENT_SECONDARY_COLOR), None);
             C3D_TexEnvFunc(env, C3D_Both, ctru_sys::GPU_ADD);
 
             // Clear out the other texenvs
-            /*
-            idk what commenting this out does
             C3D_TexEnvInit(C3D_GetTexEnv(1));
             C3D_TexEnvInit(C3D_GetTexEnv(2));
             C3D_TexEnvInit(C3D_GetTexEnv(3));
             C3D_TexEnvInit(C3D_GetTexEnv(4));
             C3D_TexEnvInit(C3D_GetTexEnv(5));
-            */
         }
     }
 
@@ -316,7 +310,7 @@ impl Scene {
             Mtx_RotateY(&mut modelView, std::f32::consts::TAU * self.angley, true);
             Mtx_Scale(&mut modelView, 20.0, 20.0, 20.0);
 
-            C3D_LightPosition(&mut self.light as *mut _, &mut lightPos as *mut _);
+            C3D_LightPosition(&mut *self.light as *mut _, &mut lightPos as *mut _);
 
             // Update the uniforms
             FVUnifMtx4x4(GPU_VERTEX_SHADER, self.uLoc_projection, projection);
@@ -348,12 +342,12 @@ pub fn on_main_loop(ctx: &mut CitroLibContext){
         ctx.scene.angley += 1.0/256.0;
 
 
-        C3D_FrameBegin(C3D_FRAME_SYNCDRAW.try_into().unwrap());
+        assert!(C3D_FrameBegin(C3D_FRAME_SYNCDRAW.try_into().unwrap()));
         {
             // C3D_RenderTargetClear is an inline we don't get generated, just call C3D_FrameBufClear directly.
             C3D_FrameBufClear(&mut (*ctx.renderTarget).frameBuf, C3D_CLEAR_ALL, ctx.clrClear, 0);
 
-            C3D_FrameDrawOn(ctx.renderTarget);
+            assert!(C3D_FrameDrawOn(ctx.renderTarget));
             C2D_SceneTarget(ctx.renderTarget);
             ctx.scene.render(-iod);
             //C2D_Flush();

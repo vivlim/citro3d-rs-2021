@@ -84,9 +84,12 @@ fn load_models() -> Result<(), Error>{
     let c3d_vertices: Vec<C3D_Vertex> = obj.vertices
         .into_iter()
         .map(|v| C3D_Vertex {
-            position: v.position,
-            texcoord: [v.texture[0], v.texture[1]], // I don't know what it means for this to be 3d in obj but 2d in c3d?
-            normal: v.normal,
+            x: v.position[0],
+            y: v.position[1],
+            z: v.position[2],
+            nx: v.normal[0],
+            ny: v.normal[1],
+            nz: v.normal[2],
         }).collect();
 
     let mut consts = consts.finish_dependencies();
