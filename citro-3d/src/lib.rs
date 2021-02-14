@@ -301,7 +301,7 @@ impl Scene {
             Mtx_PerspStereoTilt(&mut projection, 40.0*std::f32::consts::TAU / 360.0, C3D_AspectRatioTop as f32, 0.01, 1000.0, iod, 2.0, false);
 
             let objPos = C3D_FVec { __bindgen_anon_1: C3D_FVec__bindgen_ty_1 {
-                w: 1.0, z: -3.0, y: 0.0, x: 0.0
+                w: 1.0, z: -3.0, y: -0.7, x: 0.0
             }};
             let mut lightPos = C3D_FVec { __bindgen_anon_1: C3D_FVec__bindgen_ty_1 {
                 w: 1.0, z: -0.5, y: 0.0, x: 0.0
@@ -311,7 +311,7 @@ impl Scene {
             let mut modelView = MatrixToC3D(&Matrix4::identity());
             Mtx_Translate(&mut modelView, objPos.__bindgen_anon_1.x, objPos.__bindgen_anon_1.y, objPos.__bindgen_anon_1.z, true);
             Mtx_RotateY(&mut modelView, std::f32::consts::TAU * self.angley, true);
-            Mtx_Scale(&mut modelView, 2.0, 2.0, 2.0);
+            Mtx_Scale(&mut modelView, 0.5, 0.5, 0.5);
 
             C3D_LightPosition(&mut *self.light as *mut _, &mut lightPos as *mut _);
 
